@@ -4,3 +4,4 @@ project(mb_grep)
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(mb_grep main.cpp)
+target_link_libraries(mb_grep pthread)
