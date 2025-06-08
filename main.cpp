@@ -3,12 +3,18 @@
 #include <regex>
 #include <fstream>
 #include <thread>
+#include <atomic>
+#include <optional>
+#include <algorithm>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 
 namespace fs = std::filesystem;
 
 struct SearchOptions {
-    std::string query;
-    fs::path root_path;
+    std::string query {};
+    fs::path root_path {};
     bool use_regex = false;
     bool ignore_case = false;
     std::optional<std::string> file_extension = std::nullopt;
@@ -70,57 +76,72 @@ bool is_binary_file(const fs::path &path) {
     });
 }
 
-template<typename Type>
-class ThreadSafeQueue {
-    std::queue<Type> queue_;
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    std::atomic_bool done_;
+class ThreadPool {
+    using Task = std::function<void()>;
+    std::vector<std::thread> workers_;
+    std::queue<Task> tasks_;
+    std::mutex queue_mutex_;
+    std::condition_variable condition_;
+    std::atomic_bool stop_flag_ = false;
 
 public:
-    void push(const Type &value) {
-        std::lock_guard lock(mutex_);
-        queue_.push(value);
-        cv_.notify_one();
-    }
-
-    bool pop(Type &value) {
-        std::unique_lock lock(mutex_);
-        cv_.wait(lock, [this] { return !queue_.empty() || done_; });
-        if (queue_.empty()) {
-            return false;
+    explicit ThreadPool(const size_t num_threads) {
+        workers_.reserve(num_threads);
+        for (size_t i = 0; i < num_threads; ++i) {
+            workers_.emplace_back([this] {
+                while (true) {
+                    Task task {};
+                    {
+                        std::unique_lock lock {queue_mutex_};
+                        condition_.wait(lock, [this]{ return stop_flag_ || !tasks_.empty(); });
+                        if (stop_flag_ && tasks_.empty()) return;
+                        task = std::move(tasks_.front());
+                        tasks_.pop();
+                    }
+                    task();
+                }
+            });
         }
-        value = queue_.front();
-        queue_.pop();
-        return true;
     }
 
-    void done() {
-        done_ = true;
-        cv_.notify_all();
+    ~ThreadPool() {
+        stop_flag_ = true;
+        condition_.notify_all();
+        for (auto& worker: workers_) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
+    }
+
+    void submit(Task task) {
+        {
+            std::lock_guard lock {queue_mutex_};
+            tasks_.push(std::move(task));
+        }
+        condition_.notify_one();
     }
 };
 
-void worker(ThreadSafeQueue<fs::path> &file_queue, const IMatcher &matcher, std::mutex &output_mutex) {
-    fs::path path;
-    while (file_queue.pop(path)) {
-        std::ifstream file(path);
-        if (!file) {
-            continue;
-        }
-        std::string line;
-        size_t line_num = 0;
-        while (std::getline(file, line)) {
-            ++line_num;
-            if (matcher.match(line)) {
-                std::lock_guard lock(output_mutex);
-                std::cout << path << ": " << line_num << ": " << line << std::endl;
-            }
+void search_file(const fs::path& filePath, const IMatcher &matcher, std::mutex &output_mutex) {
+   std::ifstream file {filePath};
+    if (!file) {
+        return;
+    }
+    std::string line;
+    size_t line_num = 0;
+    while (std::getline(file, line)) {
+        ++line_num;
+        if (matcher.match(line)) {
+            std::lock_guard lock {output_mutex};
+            std::cout << filePath << ":" << line_num << ": " << line << std::endl;
         }
     }
 }
 
-void walk_directory(const fs::path &root_path, ThreadSafeQueue<fs::path> &file_queue, const SearchOptions &options) {
+void walk_directory(const SearchOptions &options, ThreadPool &pool, const IMatcher &matcher, std::mutex &output_mtx) {
+    const auto& root_path = options.root_path;
+    const auto& file_extension = options.file_extension;
     for (auto &entry: fs::recursive_directory_iterator(root_path)) {
         if (!entry.is_regular_file()) {
             continue;
@@ -129,17 +150,18 @@ void walk_directory(const fs::path &root_path, ThreadSafeQueue<fs::path> &file_q
         if (is_binary_file(path)) {
             continue;
         }
-        if (options.file_extension.has_value() && options.file_extension.value() != path.extension()) {
+        if (file_extension.has_value() && file_extension.value() != path.extension()) {
             continue;
         }
-        file_queue.push(path);
+        pool.submit([path, &matcher, &output_mtx] {
+            search_file(path, matcher, output_mtx);
+        });
     }
-    file_queue.done();
 }
 
 void help(const std::string &program_name) {
     std::cerr << "Usage: " << program_name << " <query> <directory> [--regex] [--ignore-case] [--ext=.txt]" <<
-            std::endl;
+        std::endl;
 }
 
 std::unique_ptr<IMatcher> create_matcher(const SearchOptions &options) {
@@ -149,6 +171,37 @@ std::unique_ptr<IMatcher> create_matcher(const SearchOptions &options) {
     return std::make_unique<SubstringMatcher>(options.query, options.ignore_case);
 }
 
+size_t get_threads_number() {
+    constexpr size_t reservedThreads = 2; // reserve 2 threads for other processes.
+    auto num_threads = static_cast<size_t>(std::thread::hardware_concurrency());
+    num_threads = std::max<size_t>(1, num_threads > reservedThreads ? num_threads - reservedThreads : 1);
+    return num_threads;
+}
+
+SearchOptions extract_arguments(const int argc, char *argv[]) {
+    SearchOptions options {};
+    options.query = argv[1];
+    options.root_path = argv[2];
+    for (int i = 3; i < argc; ++i) {
+        if (std::string arg = argv[i]; arg == "--regex") {
+            options.use_regex = true;
+        } else if (arg == "--ignore-case") {
+            options.ignore_case = true;
+        } else if (arg.rfind("--ext=", 0) == 0) {
+            options.file_extension = arg.substr(6);
+        }
+    }
+    if (!options.use_regex) {
+        static const std::regex likely_regex_pattern(R"([.^$*+?{}\[\]\\|()])");
+        if (std::regex_search(options.query, likely_regex_pattern)) {
+            std::cerr << "Warning: The pattern \"" << options.query
+                      << "\" looks like a regular expression, but --regex flag was not set.\n";
+        }
+    }
+
+    return options;
+}
+
 int main(int argc, char *argv[]) {
     constexpr int minimalArgCount = 3;
     if (argc < minimalArgCount) {
@@ -156,43 +209,17 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     try {
-        SearchOptions options{};
-        options.query = argv[1];
-        options.root_path = argv[2];
-        for (int i = 3; i < argc; ++i) {
-            if (std::string arg = argv[i]; arg == "--regex") {
-                options.use_regex = true;
-            } else if (arg == "--ignore-case") {
-                options.ignore_case = true;
-            } else if (arg.rfind("--ext=", 0) == 0) {
-                options.file_extension = arg.substr(6);
-            }
-        }
+        auto options = extract_arguments(argc, argv);
         auto matcher = create_matcher(options);
-        ThreadSafeQueue<fs::path> file_queue;
+        auto num_threads = get_threads_number();
+        ThreadPool pool {num_threads};
         std::mutex output_mutex;
-        auto num_threads = static_cast<size_t>(std::thread::hardware_concurrency());
-        constexpr size_t reservedThreads = 2; // reserve two threads for the system execution
-        if (num_threads > reservedThreads) {
-            num_threads -= reservedThreads;
-        }
-        std::vector<std::thread> workers;
-        workers.reserve(num_threads);
-        for (size_t i = 0; i < num_threads; ++i) {
-            workers.emplace_back(worker, std::ref(file_queue), std::cref(*matcher), std::ref(output_mutex));
-        }
-        walk_directory(options.root_path, file_queue, options);
-        for (auto &worker: workers) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
+        walk_directory(options, pool, *matcher, output_mutex);
     } catch (const std::exception &ex) {
         std::cerr << "Exception: " << ex.what() << std::endl;
     }
     catch (...) {
         std::cerr << "Unknown exception!" << std::endl;
     }
-
     return 0;
 }
