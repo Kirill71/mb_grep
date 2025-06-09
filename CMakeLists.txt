@@ -11,5 +11,12 @@ set(CMAKE_CXX_STANDARD 20)
 #    add_link_options(-fsanitize=thread)
 #endif()
 
-add_executable(mb_grep main.cpp)
+add_executable(mb_grep
+        main.cpp
+        matcher.h
+        matcher.cpp
+        utils.h
+        utils.cpp
+        thread_pool.h
+        thread_pool.cpp)
 target_link_libraries(mb_grep pthread)
