@@ -191,15 +191,12 @@ SearchOptions extract_arguments(const int argc, char *argv[]) {
             options.file_extension = arg.substr(6);
         }
     }
-    if (!options.use_regex) {
-        static const std::regex likely_regex_pattern(R"([.^$*+?{}\[\]\\|()])");
-        if (std::regex_search(options.query, likely_regex_pattern)) {
-            std::cerr << "Warning: The pattern \"" << options.query
-                      << "\" looks like a regular expression, but --regex flag was not set.\n";
-        }
-    }
-
     return options;
+}
+
+bool contains_regex_chars(const std::string& query) {
+    static const std::regex likely_regex_pattern(R"([.^$*+?{}\[\]\\|()])");
+    return std::regex_search(query, likely_regex_pattern);
 }
 
 int main(int argc, char *argv[]) {
@@ -210,6 +207,11 @@ int main(int argc, char *argv[]) {
     }
     try {
         auto options = extract_arguments(argc, argv);
+        if (!options.use_regex && contains_regex_chars(options.query)) {
+            std::cerr << "Warning: The pattern \"" << options.query
+                    << "\" looks like a regular expression, but --regex flag was not set.\n";
+            return 1;
+        }
         auto matcher = create_matcher(options);
         auto num_threads = get_threads_number();
         ThreadPool pool {num_threads};
