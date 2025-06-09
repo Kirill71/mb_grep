@@ -40,7 +40,7 @@ void search_file(const fs::path& filePath, const IMatcher& matcher, std::mutex& 
         ++line_num;
         if (matcher.match(line)) {
             std::lock_guard lock{output_mutex};
-            std::cout << filePath << ":" << line_num << ": " << line << std::endl;
+            std::cout << filePath << ", line num: " << line_num << ": " << line << std::endl;
         }
     }
 }

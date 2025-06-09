@@ -53,6 +53,7 @@ Go to the build folder and execute something like that:
 ```bash
   ./mb_grep error /var/log --ignore-case --regex --ext=.log
 ```
+Note: May require superuser rights to visit some directories.
 
 ## Clean
 Removes all generated binaries or temporary files.
