@@ -84,4 +84,4 @@ This project has been tested with the following compilers:
 |-------------|-----------------------| ------------ |
 | GCC         | 13.3.0                | Ubuntu 24.04 |
 | Apple Clang | 16.0.0                | macOS 14     |
-| MSVC        | 19.39.33523 (VS 2022) | Windows 11   |
+| MSVC        | 19.41.34120 (VS 2022) | Windows 11   |
