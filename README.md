@@ -46,7 +46,8 @@ Run the provided build script:
 It will build `Release` and `Debug` builds.
 
 #### Windows
-If you use Windows you will have to build the project using `CMake` tool.
+If you use Windows you will have to build the project using `CMake` tool.  
+Alternatively, you can use MS Visual Studio as an IDE it already supports `CMake` based projects.
 
 ## Run
 Go to the build folder and execute something like that:
@@ -69,7 +70,8 @@ then do:
   make clean
 ```
 #### Windows
-If you use Windows you will have to clean the project via `CMake` tool.
+If you use Windows you will have to clean the project via `CMake` tool
+ or try MS Visual Studio out, it supports `CMake` based projects nowadays.
 
 ## Pattern Debug Tip
 
