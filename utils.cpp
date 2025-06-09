@@ -19,7 +19,7 @@ bool contains_regex_chars(const std::string& query) {
 }
 
 size_t get_threads_number() {
-    constexpr size_t reservedThreads = 2; // reserve 2 threads for other processes.
+    constexpr size_t reservedThreads = 2;
     auto num_threads = static_cast<size_t>(std::thread::hardware_concurrency());
     num_threads = std::max<size_t>(1, num_threads > reservedThreads ? num_threads - reservedThreads : 1);
     return num_threads;

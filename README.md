@@ -1,6 +1,6 @@
-# Multithreaded Grep
+# Grep like tool
 
-A fast, multithreaded file search tool implemented in C++. It searches for a given query string or regular expression across a directory tree, optionally filtering by file extension and case sensitivity.
+A multithreaded file search tool implemented in C++. It searches for a given query string or regular expression across a directory tree, optionally filtering by file extension and case sensitivity.
 
 ## Features
 
