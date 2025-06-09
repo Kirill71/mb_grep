@@ -76,3 +76,12 @@ If you use Windows you will have to clean the project via `CMake` tool.
 If your query is a regex-like pattern (e.g. `n+im`, `.*`, `^pattern`) but `--regex` is not set, results may be unexpected.Make sure to use `--regex` to treat it as a regular expression.  
 The application will print the warning like that:  
 `Warning: The pattern "n+im" looks like a regular expression, but --regex flag was not set.` and stops execution.
+
+## Tested Compilers
+This project has been tested with the following compilers:
+
+| Compiler    | Version               | Platform     |
+|-------------|-----------------------| ------------ |
+| GCC         | 13.3.0                | Ubuntu 24.04 |
+| Apple Clang | 16.0.0                | macOS 14     |
+| MSVC        | 19.39.33523 (VS 2022) | Windows 11   |
