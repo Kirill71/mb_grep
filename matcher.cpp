@@ -4,7 +4,7 @@
 
 namespace mb {
 RegexMatcher::RegexMatcher(const std::string& query, const bool ignore_case) {
-    std::regex::flag_type flags = std::regex::ECMAScript;
+    auto flags = std::regex::ECMAScript;
     if (ignore_case) {
         flags |= std::regex::icase;
     }
